@@ -26,7 +26,7 @@ class mod_awakegame_mod_form extends moodleform_mod {
         ];
         $mform->addElement('select', 'contentsource', get_string('contentsource', 'mod_awakegame'), $sourceoptions);
         $mform->setType('contentsource', PARAM_ALPHA);
-        $mform->setDefault('contentsource', 'upload');
+        $mform->setDefault('contentsource', 'ai');
         $mform->addHelpButton('contentsource', 'contentsource', 'mod_awakegame');
 
         $mform->addElement('filemanager', 'packagefile', get_string('packagefile', 'mod_awakegame'), null, [
