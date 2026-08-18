@@ -20,8 +20,8 @@ class mod_awakegame_mod_form extends moodleform_mod {
         $mform->setExpanded('contentheader');
 
         $sourceoptions = [
-            'upload'  => get_string('contentsource_upload', 'mod_awakegame'),
             'ai'      => get_string('contentsource_ai', 'mod_awakegame'),
+            'upload'  => get_string('contentsource_upload', 'mod_awakegame'),
             'library' => get_string('contentsource_library', 'mod_awakegame'),
         ];
         $mform->addElement('select', 'contentsource', get_string('contentsource', 'mod_awakegame'), $sourceoptions);
