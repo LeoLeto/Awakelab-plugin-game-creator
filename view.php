@@ -99,15 +99,20 @@ JS;
         $PAGE->requires->js_init_code($js);
     }
 
-    if ($indexfile && has_capability('mod/awakegame:addinstance', $context)) {
-        $saveurl = new moodle_url('/mod/awakegame/library_save.php');
-        $savebutton = html_writer::start_tag('form', ['method' => 'post', 'action' => $saveurl->out(false), 'style' => 'margin-top:10px;']);
-        $savebutton .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
-        $savebutton .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'id', 'value' => $cm->id]);
-        $savebutton .= html_writer::tag('button', get_string('savetolibrary', 'mod_awakegame'),
-            ['type' => 'submit', 'class' => 'btn btn-secondary']);
-        $savebutton .= html_writer::end_tag('form');
-        echo $savebutton;
+    if ($indexfile && !empty($awakegame->marketplaceshare) && has_capability('mod/awakegame:addinstance', $context)) {
+        $status = $awakegame->marketplacestatus ?: 'pending';
+        echo $OUTPUT->notification(get_string('marketplacestatus_' . $status, 'mod_awakegame'), 'info');
+
+        if (!empty($awakegame->marketplaceid)) {
+            $updateurl = new moodle_url('/mod/awakegame/marketplace_update.php');
+            $updatebutton = html_writer::start_tag('form', ['method' => 'post', 'action' => $updateurl->out(false), 'style' => 'margin-top:10px;']);
+            $updatebutton .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+            $updatebutton .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'id', 'value' => $cm->id]);
+            $updatebutton .= html_writer::tag('button', get_string('updateinmarketplace', 'mod_awakegame'),
+                ['type' => 'submit', 'class' => 'btn btn-secondary']);
+            $updatebutton .= html_writer::end_tag('form');
+            echo $updatebutton;
+        }
     }
 }
 

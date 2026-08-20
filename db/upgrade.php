@@ -94,5 +94,38 @@ function xmldb_awakegame_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026072805, 'awakegame');
     }
 
+    if ($oldversion < 2026081900) {
+        $table = new xmldb_table('awakegame');
+
+        $field = new xmldb_field('marketplaceshare', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'aipendingreview');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        $field = new xmldb_field('marketplaceid', XMLDB_TYPE_CHAR, '40', null, null, null, null, 'marketplaceshare');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        $field = new xmldb_field('marketplacestatus', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, '', 'marketplaceid');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026081900, 'awakegame');
+    }
+
+    if ($oldversion < 2026082000) {
+        // La biblioteca interna del sitio se sustituye por el Marketplace: se
+        // elimina la tabla y todo lo que hubiera guardado en ella (decisión
+        // explícita, no se conserva en ningún sitio tras este paso).
+        $librarytable = new xmldb_table('awakegame_library');
+        if ($dbman->table_exists($librarytable)) {
+            $dbman->drop_table($librarytable);
+        }
+
+        upgrade_mod_savepoint(true, 2026082000, 'awakegame');
+    }
+
     return true;
 }

@@ -14,11 +14,20 @@ require_login($course, true, $cm);
 $context = context_module::instance($cm->id);
 require_capability('mod/awakegame:addinstance', $context);
 
-awakegame_save_to_library($context, $awakegame, $USER->id);
+if (empty($awakegame->marketplaceid)) {
+    redirect(
+        new moodle_url('/mod/awakegame/view.php', ['id' => $cm->id]),
+        get_string('marketplacenotpublishedyet', 'mod_awakegame'),
+        null,
+        \core\output\notification::NOTIFY_ERROR
+    );
+}
+
+awakegame_queue_marketplace_task($awakegame->id, 'update');
 
 redirect(
     new moodle_url('/mod/awakegame/view.php', ['id' => $cm->id]),
-    get_string('savedtolibrary', 'mod_awakegame'),
+    get_string('marketplaceupdatequeued', 'mod_awakegame'),
     null,
     \core\output\notification::NOTIFY_SUCCESS
 );

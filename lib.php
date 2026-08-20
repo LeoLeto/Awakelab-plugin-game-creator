@@ -61,7 +61,7 @@ function awakegame_add_instance($data, $mform = null) {
 function awakegame_update_instance($data, $mform = null) {
     global $DB;
 
-    $old = $DB->get_record('awakegame', ['id' => $data->instance], 'aiprompt, contentsource');
+    $old = $DB->get_record('awakegame', ['id' => $data->instance], 'aiprompt, contentsource, marketplaceid');
 
     // El prompt original queda bloqueado en el formulario una vez existe (ver
     // mod_form.php). Un campo bloqueado ("hardFreeze") no siempre viaja de
@@ -220,15 +220,41 @@ function awakegame_process_content(context_module $context, $data, $old = null) 
         }
         // Si no hay mejora ni se fuerza la regeneración, se deja el juego
         // actual tal cual (el prompt original, por sí solo, no regenera nada).
-    } else if ($source === 'library') {
-        $libraryid = (int) ($data->libraryentry ?? 0);
-        if ($libraryid > 0) {
-            awakegame_use_library_entry($context, $data->id, $libraryid);
+    } else if ($source === 'marketplace') {
+        $marketplacegameid = trim((string) ($data->marketplacegame ?? ''));
+        $adapt = trim($data->marketplaceadapt ?? '');
+        if ($marketplacegameid !== '' && $marketplacegameid !== '0') {
+            if ($adapt !== '') {
+                // Con instrucciones de adaptación hace falta IA: se procesa en
+                // segundo plano, igual que la generación desde cero (ver
+                // classes/task/generate_content.php), para no bloquear el
+                // guardado del formulario con una llamada externa.
+                awakegame_queue_content_generation($data->id, [
+                    'mode'              => 'adaptmarketplace',
+                    'instanceid'        => $data->id,
+                    'marketplacegameid' => $marketplacegameid,
+                    'adapt'             => $adapt,
+                    'sectionnum'        => $data->section ?? null,
+                    'courseid'          => $data->course ?? null,
+                ]);
+            } else {
+                awakegame_use_marketplace_entry($context, $data->id, $marketplacegameid);
+            }
         }
     } else if (!empty($data->packagefile)) {
         file_save_draft_area_files($data->packagefile, $context->id, 'mod_awakegame', 'package', 0,
             ['subdirs' => 0, 'maxfiles' => 1]);
         awakegame_extract_package($context, $data->id);
+    }
+
+    // Compartir en el Marketplace: solo se publica automáticamente la PRIMERA
+    // vez que se marca la casilla (todavía no tiene marketplaceid). Si ya
+    // estaba publicado, guardar el formulario de nuevo NO lo actualiza — eso
+    // es siempre una acción manual del botón "Actualizar en el Marketplace"
+    // (ver view.php / marketplace_update.php), tal y como se pidió.
+    $oldmarketplaceid = trim((string) ($old->marketplaceid ?? ''));
+    if (!empty($data->marketplaceshare) && $oldmarketplaceid === '') {
+        awakegame_queue_marketplace_task($data->id, 'publish');
     }
 }
 
@@ -1002,74 +1028,251 @@ function awakegame_save_content(context_module $context, string $html) {
 }
 
 /**
- * Devuelve todas las entradas de la biblioteca compartida (visible para todo
- * el sitio, no solo el curso actual), de más usada a más reciente.
+ * Clona un juego publicado en el Marketplace (de otro colegio o del propio)
+ * como el contenido de esta actividad.
  */
-function awakegame_get_library_entries() {
+function awakegame_use_marketplace_entry(context_module $context, $instanceid, $marketplacegameid) {
     global $DB;
 
-    return $DB->get_records('awakegame_library', null, 'timesused DESC, timecreated DESC');
+    $game = awakegame_marketplace_get_game($marketplacegameid);
+    if (!$game) {
+        return; // El juego ya no existe en el Marketplace, o no se pudo contactar; no se rompe el guardado.
+    }
+
+    awakegame_save_content($context, $game['html']);
+    $DB->set_field('awakegame', 'revision', time(), ['id' => $instanceid]);
 }
 
 /**
- * Guarda una copia del juego actual de esta actividad en la biblioteca
- * compartida del sitio, para que cualquier profesor pueda reutilizarlo en
- * cualquier curso más adelante sin tener que generarlo de nuevo con IA.
+ * Igual que awakegame_use_marketplace_entry(), pero en vez de clonar el
+ * contenido tal cual, usa el juego del Marketplace ÚNICAMENTE como plantilla
+ * de mecánica/aspecto y regenera el contenido real (términos, preguntas,
+ * datos) a partir del PDF/contexto de la sección del curso donde se está
+ * creando la actividad — igual que awakegame_generate_from_prompt(), con la
+ * misma comprobación de tema y reintentos (awakegame_generate_with_topic_check()),
+ * para que el resultado quede anclado al tema real en vez de que la IA se lo
+ * invente a partir de instrucciones sueltas del profesor.
  *
- * Los archivos de la biblioteca se guardan en el contexto del sistema (no en
- * el del curso), porque son compartidos entre todos los cursos del sitio.
+ * $sectionnum/$courseid: ver awakegame_generate_from_prompt(), mismo motivo
+ * (al CREAR la actividad, course_modules.section todavía no está resuelto).
  */
-function awakegame_save_to_library(context_module $context, $awakegame, $userid) {
+function awakegame_adapt_marketplace_entry(
+    context_module $context,
+    $instanceid,
+    $marketplacegameid,
+    $adaptinstructions,
+    $sectionnum = null,
+    $courseid = null
+) {
     global $DB;
 
+    $game = awakegame_marketplace_get_game($marketplacegameid);
+    if (!$game) {
+        return; // El juego ya no existe en el Marketplace, o no se pudo contactar; no se rompe el guardado.
+    }
+
+    $templatehtml = awakegame_strip_score_bridge($game['html']);
+
+    if ($sectionnum !== null && $courseid !== null) {
+        $section = awakegame_get_section_row_by_number($courseid, $sectionnum);
+    } else {
+        $section = awakegame_get_section_row($context->instanceid);
+    }
+
+    $basesectioncontext = $section ? awakegame_build_section_context_text($section, $context->instanceid) : '';
+    $fallbacktopiclabel = ($section && trim((string) $section->name) !== '') ? format_string($section->name) : '';
+    $pdf = $section ? awakegame_find_section_pdf($context->instanceid, $section) : null;
+
+    $prompt = "Quiero un juego con EXACTAMENTE la misma mecánica, reglas y aspecto visual que el " .
+        "siguiente juego de ejemplo, pero con el contenido (términos, preguntas, datos concretos) " .
+        "sustituido por el tema real indicado en el \"Contexto de la sección del curso\" que se te da " .
+        "por separado (o en el PDF que incluya). TIENES PROHIBIDO reutilizar los términos/datos " .
+        "concretos del ejemplo — son solo una plantilla de mecánica y estructura, no de contenido; " .
+        "el contenido tiene que salir del contexto real de la sección, nunca del ejemplo.\n\n" .
+        "--- JUEGO DE EJEMPLO (cópiate su mecánica/estructura/aspecto; ignora sus términos/datos) ---\n" .
+        $templatehtml . "\n--- FIN DEL EJEMPLO ---";
+
+    if (trim($adaptinstructions) !== '') {
+        $prompt .= "\n\nInstrucciones adicionales del profesor sobre esta actividad concreta:\n" . $adaptinstructions;
+    }
+
+    $result = awakegame_generate_with_topic_check($prompt, $basesectioncontext, $fallbacktopiclabel, $pdf);
+    $html = awakegame_inject_score_bridge($result['html'], $instanceid);
+
+    awakegame_save_content($context, $html);
+    $DB->set_field('awakegame', 'revision', time(), ['id' => $instanceid]);
+
+    if (!$result['verified'] && $result['topiclabel'] !== '') {
+        \core\notification::add(
+            get_string('aitopicunverified', 'mod_awakegame', $result['topiclabel']),
+            \core\output\notification::NOTIFY_WARNING
+        );
+    }
+}
+
+/**
+ * Cliente HTTP compartido para hablar con la API del Marketplace, autenticada
+ * con la clave de API de este colegio (ajustes del plugin). A diferencia de
+ * awakegame_anthropic_request(), esto no es una llamada a un modelo de IA:
+ * es un JSON pequeño de ida y vuelta, así que un timeout corto es apropiado y
+ * no hace falta razonamiento extendido ni reintentos internos — los
+ * reintentos ante fallo los gestiona la propia cola de tareas de Moodle (ver
+ * classes/task/publish_to_marketplace.php).
+ *
+ * @param string $method 'GET', 'POST' o 'PUT'
+ * @param array $query parámetros de query string (por ejemplo ['id' => 123])
+ * @param array|null $payload cuerpo JSON a enviar (POST/PUT)
+ * @return array respuesta ya decodificada
+ */
+function awakegame_marketplace_request(string $method, array $query = [], ?array $payload = null): array {
+    global $CFG;
+    require_once($CFG->libdir . '/filelib.php'); // Ahí vive \curl; no siempre está cargada ya según el contexto.
+
+    $baseurl = trim((string) get_config('mod_awakegame', 'marketplaceurl'));
+    $apikey = trim((string) get_config('mod_awakegame', 'marketplaceapikey'));
+
+    if ($baseurl === '' || $apikey === '') {
+        throw new moodle_exception('nomarketplaceconfig', 'mod_awakegame');
+    }
+
+    $url = $baseurl;
+    if (!empty($query)) {
+        $url .= (strpos($url, '?') === false ? '?' : '&') . http_build_query($query);
+    }
+
+    $curl = new \curl();
+    $curl->setHeader('X-API-Key: ' . $apikey);
+    $curl->setHeader('Content-Type: application/json');
+
+    $options = ['CURLOPT_TIMEOUT' => 15];
+
+    if ($method === 'POST') {
+        $response = $curl->post($url, json_encode($payload ?? []), $options);
+    } else if ($method === 'PUT') {
+        // Se usa post() forzando el verbo HTTP con CURLOPT_CUSTOMREQUEST en vez
+        // de curl::put() (pensado en Moodle sobre todo para subir ficheros vía
+        // WebDAV): así el cuerpo JSON se envía exactamente igual que en un
+        // POST normal, solo cambia la línea de petición HTTP a PUT.
+        $options['CURLOPT_CUSTOMREQUEST'] = 'PUT';
+        $response = $curl->post($url, json_encode($payload ?? []), $options);
+    } else {
+        $response = $curl->get($url, [], $options);
+    }
+
+    $httpcode = $curl->info['http_code'] ?? 0;
+    $decoded = json_decode((string) $response, true);
+
+    if ($httpcode < 200 || $httpcode >= 300 || !is_array($decoded)) {
+        $message = $decoded['error'] ?? ('HTTP ' . $httpcode);
+        throw new moodle_exception('marketplacerequestfailed', 'mod_awakegame', '', $message);
+    }
+
+    return $decoded;
+}
+
+/**
+ * Encola la publicación o actualización de un juego en el Marketplace como
+ * tarea ad-hoc, para no bloquear nunca la petición que guarda el formulario
+ * con una llamada de red externa (la misma razón por la que la generación
+ * con IA se mueve a background: ver classes/task/generate_content.php).
+ *
+ * @param string $mode 'publish' (primera publicación) o 'update' (botón manual)
+ */
+function awakegame_queue_marketplace_task($instanceid, string $mode): void {
+    global $DB;
+
+    $task = new \mod_awakegame\task\publish_to_marketplace();
+    $task->set_custom_data(['instanceid' => $instanceid, 'mode' => $mode]);
+    \core\task\manager::queue_adhoc_task($task);
+
+    $DB->set_field('awakegame', 'marketplacestatus', 'pending', ['id' => $instanceid]);
+}
+
+/**
+ * Listado ligero de juegos publicados, para el selector "Usar del
+ * Marketplace" de mod_form.php. Si el Marketplace no responde (apagado, sin
+ * configurar, caído en ese momento), se devuelve una lista vacía en vez de
+ * romper el formulario — igual de tolerante que awakegame_find_section_pdf().
+ */
+function awakegame_marketplace_list_games(): array {
+    try {
+        $result = awakegame_marketplace_request('GET');
+        return $result['games'] ?? [];
+    } catch (\Throwable $e) {
+        return [];
+    }
+}
+
+/**
+ * Detalle completo (incluye el HTML) de un juego del Marketplace, usado para
+ * clonarlo dentro de una actividad (ver awakegame_use_marketplace_entry()).
+ */
+function awakegame_marketplace_get_game($marketplacegameid): ?array {
+    try {
+        $result = awakegame_marketplace_request('GET', ['id' => $marketplacegameid]);
+        return $result['game'] ?? null;
+    } catch (\Throwable $e) {
+        return null;
+    }
+}
+
+/**
+ * Publica por primera vez el juego actual de esta actividad en el
+ * Marketplace. Llamado únicamente desde la tarea ad-hoc (nunca de forma
+ * síncrona al guardar el formulario) — ver classes/task/publish_to_marketplace.php.
+ */
+function awakegame_marketplace_publish($awakegame): void {
+    global $DB;
+
+    $context = context_module::instance(
+        get_coursemodule_from_instance('awakegame', $awakegame->id, $awakegame->course)->id
+    );
     $fs = get_file_storage();
     $indexfile = $fs->get_file($context->id, 'mod_awakegame', 'content', 0, '/', 'index.html');
+
     if (!$indexfile) {
         throw new moodle_exception('noindexfile', 'mod_awakegame');
     }
 
-    $libraryid = $DB->insert_record('awakegame_library', (object) [
-        'name'           => $awakegame->name,
-        'aiprompt'       => $awakegame->aiprompt,
-        'sourcecourseid' => $awakegame->course,
-        'savedby'        => $userid,
-        'timesused'      => 0,
-        'timecreated'    => time(),
+    $result = awakegame_marketplace_request('POST', [], [
+        'title'               => $awakegame->name,
+        'prompt'              => $awakegame->aiprompt,
+        'html'                => $indexfile->get_content(),
+        'source_instance_id'  => $awakegame->id,
     ]);
 
-    $syscontext = context_system::instance();
-    $fs->create_file_from_storedfile([
-        'contextid' => $syscontext->id,
-        'component' => 'mod_awakegame',
-        'filearea'  => 'library',
-        'itemid'    => $libraryid,
-        'filepath'  => '/',
-        'filename'  => 'index.html',
-    ], $indexfile);
-
-    return $libraryid;
+    $DB->update_record('awakegame', (object) [
+        'id'                => $awakegame->id,
+        'marketplaceid'     => (string) $result['id'],
+        'marketplacestatus' => 'published',
+    ]);
 }
 
 /**
- * Clona el juego guardado en la biblioteca (identificado por $libraryid)
- * como el contenido de esta actividad, y suma uno a su contador de usos.
+ * Actualiza en el Marketplace el juego ya publicado de esta actividad, con
+ * su contenido actual. Llamado únicamente desde la tarea ad-hoc, disparada
+ * por el botón manual "Actualizar en el Marketplace" (nunca automáticamente
+ * al guardar: la actualización es siempre una acción explícita del profesor).
  */
-function awakegame_use_library_entry(context_module $context, $instanceid, $libraryid) {
+function awakegame_marketplace_update($awakegame): void {
     global $DB;
 
-    $syscontext = context_system::instance();
+    $context = context_module::instance(
+        get_coursemodule_from_instance('awakegame', $awakegame->id, $awakegame->course)->id
+    );
     $fs = get_file_storage();
-    $libraryfile = $fs->get_file($syscontext->id, 'mod_awakegame', 'library', $libraryid, '/', 'index.html');
+    $indexfile = $fs->get_file($context->id, 'mod_awakegame', 'content', 0, '/', 'index.html');
 
-    if (!$libraryfile) {
-        return; // La entrada de la biblioteca ya no existe o no tiene archivo; no hacemos nada.
+    if (!$indexfile) {
+        throw new moodle_exception('noindexfile', 'mod_awakegame');
     }
 
-    $html = $libraryfile->get_content();
-    awakegame_save_content($context, $html);
+    awakegame_marketplace_request('PUT', ['id' => $awakegame->marketplaceid], [
+        'title' => $awakegame->name,
+        'html'  => $indexfile->get_content(),
+    ]);
 
-    $DB->set_field('awakegame', 'revision', time(), ['id' => $instanceid]);
-    $DB->set_field('awakegame_library', 'timesused', $DB->get_field('awakegame_library', 'timesused', ['id' => $libraryid]) + 1, ['id' => $libraryid]);
+    $DB->set_field('awakegame', 'marketplacestatus', 'published', ['id' => $awakegame->id]);
 }
 
 /**
@@ -1295,6 +1498,9 @@ function awakegame_anthropic_request(
     int $maxtokens = 16000,
     string $thinkingtype = 'adaptive'
 ): string {
+    global $CFG;
+    require_once($CFG->libdir . '/filelib.php'); // Ahí vive \curl; no siempre está cargada ya según el contexto.
+
     $apikey = trim((string) get_config('mod_awakegame', 'anthropicapikey'));
     if ($apikey === '') {
         throw new moodle_exception('noapikey', 'mod_awakegame');

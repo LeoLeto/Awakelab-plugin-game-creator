@@ -35,6 +35,15 @@ class generate_content extends \core\task\adhoc_task {
         try {
             if (($data->mode ?? '') === 'improve') {
                 awakegame_apply_improvement($context, $data->instanceid, $data->prompt, $data->improvement);
+            } else if (($data->mode ?? '') === 'adaptmarketplace') {
+                awakegame_adapt_marketplace_entry(
+                    $context,
+                    $data->instanceid,
+                    $data->marketplacegameid,
+                    $data->adapt,
+                    $data->sectionnum ?? null,
+                    $data->courseid ?? null
+                );
             } else {
                 awakegame_generate_from_prompt(
                     $context,

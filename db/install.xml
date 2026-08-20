@@ -13,6 +13,9 @@
         <FIELD NAME="aiimprovement" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Mejora/cambio pendiente de aplicar sobre el juego actual; se vacia tras aplicarse"/>
         <FIELD NAME="grade" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="100" SEQUENCE="false" COMMENT="Puntos maximos (positivo) o -id de escala (negativo); 0 = sin calificar"/>
         <FIELD NAME="aipendingreview" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1 = generado/mejorado por IA y aun no confirmado por el profesor; los alumnos no pueden verlo"/>
+        <FIELD NAME="marketplaceshare" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1 = el profesor quiere compartir este juego en el Marketplace"/>
+        <FIELD NAME="marketplaceid" TYPE="char" LENGTH="40" NOTNULL="false" SEQUENCE="false" COMMENT="Id devuelto por el Marketplace tras publicar; vacio si aun no se ha publicado"/>
+        <FIELD NAME="marketplacestatus" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="" SEQUENCE="false" COMMENT="'', pending, published o error"/>
         <FIELD NAME="revision" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Usado para invalidar cache al re-subir el paquete"/>
         <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
@@ -40,21 +43,6 @@
       <INDEXES>
         <INDEX NAME="awakegameid-userid" UNIQUE="true" FIELDS="awakegameid, userid"/>
       </INDEXES>
-    </TABLE>
-    <TABLE NAME="awakegame_library" COMMENT="Biblioteca compartida de juegos guardados, visible para todo el sitio">
-      <FIELDS>
-        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
-        <FIELD NAME="name" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false" COMMENT="Nombre mostrado en la biblioteca"/>
-        <FIELD NAME="aiprompt" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Prompt original del juego guardado, solo informativo"/>
-        <FIELD NAME="sourcecourseid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Curso desde el que se guardo, solo informativo"/>
-        <FIELD NAME="savedby" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Usuario que lo guardo"/>
-        <FIELD NAME="timesused" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Veces que se ha clonado en una actividad"/>
-        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
-      </FIELDS>
-      <KEYS>
-        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
-        <KEY NAME="savedby" TYPE="foreign" FIELDS="savedby" REFTABLE="user" REFFIELDS="id"/>
-      </KEYS>
     </TABLE>
   </TABLES>
 </XMLDB>
