@@ -127,5 +127,21 @@ function xmldb_awakegame_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026082000, 'awakegame');
     }
 
+    if ($oldversion < 2026090100) {
+        $table = new xmldb_table('awakegame');
+
+        $field = new xmldb_field('marketplacelasterror', XMLDB_TYPE_TEXT, null, null, null, null, null, 'marketplacestatus');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        $field = new xmldb_field('marketplacelastattempt', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'marketplacelasterror');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026090100, 'awakegame');
+    }
+
     return true;
 }

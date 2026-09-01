@@ -16,6 +16,8 @@
         <FIELD NAME="marketplaceshare" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1 = el profesor quiere compartir este juego en el Marketplace"/>
         <FIELD NAME="marketplaceid" TYPE="char" LENGTH="40" NOTNULL="false" SEQUENCE="false" COMMENT="Id devuelto por el Marketplace tras publicar; vacio si aun no se ha publicado"/>
         <FIELD NAME="marketplacestatus" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="" SEQUENCE="false" COMMENT="'', pending, published o error"/>
+        <FIELD NAME="marketplacelasterror" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Mensaje tecnico del ultimo fallo al publicar/actualizar en el Marketplace; vacio si el ultimo intento fue correcto"/>
+        <FIELD NAME="marketplacelastattempt" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Marca de tiempo del ultimo intento (correcto o fallido) de publicar/actualizar en el Marketplace"/>
         <FIELD NAME="revision" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Usado para invalidar cache al re-subir el paquete"/>
         <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>

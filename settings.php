@@ -35,4 +35,11 @@ if ($ADMIN->fulltree) {
         get_string('marketplaceapikey_desc', 'mod_awakegame'),
         ''
     ));
+
+    $testconnectionurl = new moodle_url('/mod/awakegame/testconnection.php');
+    $settings->add(new admin_setting_description(
+        'mod_awakegame/testconnection',
+        get_string('testconnection', 'mod_awakegame'),
+        html_writer::link($testconnectionurl, get_string('testconnection', 'mod_awakegame'), ['class' => 'btn btn-secondary'])
+    ));
 }

@@ -1194,6 +1194,33 @@ function awakegame_queue_marketplace_task($instanceid, string $mode): void {
  * configurar, caído en ese momento), se devuelve una lista vacía en vez de
  * romper el formulario — igual de tolerante que awakegame_find_section_pdf().
  */
+/**
+ * Hora programada del próximo reintento automático de publicación/actualización
+ * de esta actividad en el Marketplace, si hay una tarea ad-hoc pendiente para
+ * ella (null si ya no hay ninguna encolada, típicamente porque el último
+ * intento tuvo éxito o porque se agotaron los reintentos).
+ */
+function awakegame_get_marketplace_next_retry(int $instanceid): ?int {
+    global $DB;
+
+    $tasks = $DB->get_records_select(
+        'task_adhoc',
+        $DB->sql_like('classname', ':classname'),
+        ['classname' => '%publish_to_marketplace'],
+        '',
+        'id, customdata, nextruntime'
+    );
+
+    foreach ($tasks as $task) {
+        $customdata = json_decode($task->customdata, true);
+        if (($customdata['instanceid'] ?? null) == $instanceid) {
+            return (int) $task->nextruntime;
+        }
+    }
+
+    return null;
+}
+
 function awakegame_marketplace_list_games(): array {
     try {
         $result = awakegame_marketplace_request('GET');
@@ -1242,9 +1269,11 @@ function awakegame_marketplace_publish($awakegame): void {
     ]);
 
     $DB->update_record('awakegame', (object) [
-        'id'                => $awakegame->id,
-        'marketplaceid'     => (string) $result['id'],
-        'marketplacestatus' => 'published',
+        'id'                     => $awakegame->id,
+        'marketplaceid'          => (string) $result['id'],
+        'marketplacestatus'      => 'published',
+        'marketplacelasterror'   => null,
+        'marketplacelastattempt' => time(),
     ]);
 }
 
@@ -1272,7 +1301,12 @@ function awakegame_marketplace_update($awakegame): void {
         'html'  => $indexfile->get_content(),
     ]);
 
-    $DB->set_field('awakegame', 'marketplacestatus', 'published', ['id' => $awakegame->id]);
+    $DB->update_record('awakegame', (object) [
+        'id'                     => $awakegame->id,
+        'marketplacestatus'      => 'published',
+        'marketplacelasterror'   => null,
+        'marketplacelastattempt' => time(),
+    ]);
 }
 
 /**
