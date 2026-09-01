@@ -34,7 +34,12 @@ class publish_to_marketplace extends \core\task\adhoc_task {
                 awakegame_marketplace_publish($awakegame);
             }
         } catch (\Throwable $e) {
-            $DB->set_field('awakegame', 'marketplacestatus', 'error', ['id' => $data->instanceid]);
+            $DB->update_record('awakegame', (object) [
+                'id'                     => $data->instanceid,
+                'marketplacestatus'      => 'error',
+                'marketplacelasterror'   => $e->getMessage(),
+                'marketplacelastattempt' => time(),
+            ]);
             awakegame_debug_log("marketplace instanceid={$data->instanceid} modo=" . ($data->mode ?? 'publish') .
                 ' FALLÓ (se reintentará): ' . $e->getMessage());
             throw $e;

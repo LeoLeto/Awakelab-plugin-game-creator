@@ -101,7 +101,27 @@ JS;
 
     if ($indexfile && !empty($awakegame->marketplaceshare) && has_capability('mod/awakegame:addinstance', $context)) {
         $status = $awakegame->marketplacestatus ?: 'pending';
-        echo $OUTPUT->notification(get_string('marketplacestatus_' . $status, 'mod_awakegame'), 'info');
+        $notificationtype = $status === 'error' ? 'error' : 'info';
+        $statusmessage = get_string('marketplacestatus_' . $status, 'mod_awakegame');
+
+        if ($status === 'error') {
+            $nextretry = awakegame_get_marketplace_next_retry($awakegame->id);
+            if ($nextretry) {
+                $statusmessage .= ' ' . get_string('marketplacenextretry', 'mod_awakegame', userdate($nextretry, get_string('strftimedatetime', 'langconfig')));
+            }
+        }
+
+        echo $OUTPUT->notification($statusmessage, $notificationtype);
+
+        if ($status === 'error' && !empty($awakegame->marketplacelasterror)
+                && has_capability('moodle/site:config', context_system::instance())) {
+            echo $OUTPUT->box(
+                get_string('marketplacelasterror_detail', 'mod_awakegame', s($awakegame->marketplacelasterror)),
+                'generalbox',
+                '',
+                ['style' => 'font-size:0.85em; color:#666;']
+            );
+        }
 
         if (!empty($awakegame->marketplaceid)) {
             $updateurl = new moodle_url('/mod/awakegame/marketplace_update.php');
