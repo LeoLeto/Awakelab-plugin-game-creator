@@ -38,25 +38,56 @@ class mod_awakegame_mod_form extends moodleform_mod {
         $mform->hideIf('packagefile', 'contentsource', 'eq', 'ai');
         $mform->hideIf('packagefile', 'contentsource', 'eq', 'marketplace');
 
-        // El listado se pide en directo al Marketplace; si no responde (apagado,
-        // sin configurar, caído en ese momento) awakegame_marketplace_list_games()
-        // devuelve una lista vacía y aquí se avisa, en vez de romper el formulario.
-        $marketplacegames = awakegame_marketplace_list_games();
-        $marketplaceoptions = ['0' => get_string('marketplacechoose', 'mod_awakegame')];
-        foreach ($marketplacegames as $game) {
-            $label = $game['title'] . ' (' . $game['school_name'] . ')';
-            $marketplaceoptions[$game['id']] = $label;
-        }
-        $mform->addElement('select', 'marketplacegame', get_string('marketplacegame', 'mod_awakegame'), $marketplaceoptions);
+        // En vez de cargar de golpe TODOS los juegos publicados en un <select>
+        // (no escala si el catálogo crece), se abre una ventana emergente con
+        // buscador (marketplace_picker.php) que avisa aquí con postMessage al
+        // elegir uno. El campo real que viaja con el formulario sigue siendo
+        // "marketplacegame" (oculto), igual que antes.
+        global $COURSE, $PAGE;
+
+        $mform->addElement('hidden', 'marketplacegame', 0);
         $mform->setType('marketplacegame', PARAM_INT);
-        $mform->addHelpButton('marketplacegame', 'marketplacegame', 'mod_awakegame');
         $mform->hideIf('marketplacegame', 'contentsource', 'eq', 'upload');
         $mform->hideIf('marketplacegame', 'contentsource', 'eq', 'ai');
-        if (empty($marketplacegames)) {
-            $mform->addElement('static', 'marketplaceunavailable', '', get_string('marketplaceunavailable', 'mod_awakegame'));
-            $mform->hideIf('marketplaceunavailable', 'contentsource', 'eq', 'upload');
-            $mform->hideIf('marketplaceunavailable', 'contentsource', 'eq', 'ai');
+
+        $mform->addElement('static', 'marketplacegamechosen', get_string('marketplacegame', 'mod_awakegame'),
+            html_writer::tag('span', get_string('marketplacenonechosen', 'mod_awakegame'), ['id' => 'awakegame-marketplace-chosen']));
+        $mform->addHelpButton('marketplacegamechosen', 'marketplacegame', 'mod_awakegame');
+        $mform->hideIf('marketplacegamechosen', 'contentsource', 'eq', 'upload');
+        $mform->hideIf('marketplacegamechosen', 'contentsource', 'eq', 'ai');
+
+        $mform->addElement('button', 'marketplacegamepicker', get_string('marketplacegamepickerbutton', 'mod_awakegame'));
+        $mform->hideIf('marketplacegamepicker', 'contentsource', 'eq', 'upload');
+        $mform->hideIf('marketplacegamepicker', 'contentsource', 'eq', 'ai');
+
+        $pickerurl = new moodle_url('/mod/awakegame/marketplace_picker.php', ['course' => $COURSE->id]);
+        $js = <<<JS
+(function() {
+    var openbutton = document.getElementById('id_marketplacegamepicker');
+    if (openbutton) {
+        openbutton.addEventListener('click', function() {
+            window.open('{$pickerurl->out(false)}', 'awakegamemarketplacepicker', 'width=700,height=600');
+        });
+    }
+    window.addEventListener('message', function(event) {
+        if (event.origin !== window.location.origin) {
+            return;
         }
+        if (!event.data || event.data.type !== 'awakegame-marketplace-pick') {
+            return;
+        }
+        var hidden = document.getElementById('id_marketplacegame');
+        var label = document.getElementById('awakegame-marketplace-chosen');
+        if (hidden) {
+            hidden.value = event.data.id;
+        }
+        if (label) {
+            label.textContent = event.data.title;
+        }
+    });
+})();
+JS;
+        $PAGE->requires->js_init_code($js);
 
         $mform->addElement('textarea', 'marketplaceadapt', get_string('marketplaceadapt', 'mod_awakegame'),
             ['rows' => 4, 'cols' => 60]);
@@ -94,18 +125,6 @@ class mod_awakegame_mod_form extends moodleform_mod {
         $mform->setDefault('airegenerate', 0);
         $mform->hideIf('airegenerate', 'contentsource', 'eq', 'upload');
         $mform->hideIf('airegenerate', 'contentsource', 'eq', 'marketplace');
-
-        $mform->addElement('header', 'marketplaceheader', get_string('marketplaceshareheader', 'mod_awakegame'));
-
-        $mform->addElement('checkbox', 'marketplaceshare', get_string('marketplaceshare', 'mod_awakegame'));
-        $mform->addHelpButton('marketplaceshare', 'marketplaceshare', 'mod_awakegame');
-        $mform->setDefault('marketplaceshare', 0);
-
-        $marketplacestatus = $this->current->marketplacestatus ?? '';
-        if ($marketplacestatus !== '') {
-            $mform->addElement('static', 'marketplacestatusnotice', '',
-                get_string('marketplacestatus_' . $marketplacestatus, 'mod_awakegame'));
-        }
 
         $this->standard_grading_coursemodule_elements();
         $mform->setDefault('grade', 100);

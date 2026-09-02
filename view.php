@@ -99,39 +99,50 @@ JS;
         $PAGE->requires->js_init_code($js);
     }
 
-    if ($indexfile && !empty($awakegame->marketplaceshare) && has_capability('mod/awakegame:addinstance', $context)) {
-        $status = $awakegame->marketplacestatus ?: 'pending';
-        $notificationtype = $status === 'error' ? 'error' : 'info';
-        $statusmessage = get_string('marketplacestatus_' . $status, 'mod_awakegame');
+    if ($indexfile && has_capability('mod/awakegame:addinstance', $context)) {
+        $status = $awakegame->marketplacestatus ?: '';
 
-        if ($status === 'error') {
-            $nextretry = awakegame_get_marketplace_next_retry($awakegame->id);
-            if ($nextretry) {
-                $statusmessage .= ' ' . get_string('marketplacenextretry', 'mod_awakegame', userdate($nextretry, get_string('strftimedatetime', 'langconfig')));
-            }
-        }
-
-        echo $OUTPUT->notification($statusmessage, $notificationtype);
-
-        if ($status === 'error' && !empty($awakegame->marketplacelasterror)
-                && has_capability('moodle/site:config', context_system::instance())) {
-            echo $OUTPUT->box(
-                get_string('marketplacelasterror_detail', 'mod_awakegame', s($awakegame->marketplacelasterror)),
-                'generalbox',
-                '',
-                ['style' => 'font-size:0.85em; color:#666;']
+        if ($status === '') {
+            // Todavía no se ha intentado publicar nunca: el profesor ya ha
+            // visto el resultado (está justo encima, en el iframe), y decide
+            // ahora si quiere compartirlo — nunca se publica solo al guardar
+            // el formulario, precisamente para evitar subir algo sin haberlo
+            // visto antes.
+            echo awakegame_marketplace_action_button(
+                $cm->id,
+                '/mod/awakegame/marketplace_publish.php',
+                get_string('publishtomarketplace', 'mod_awakegame')
             );
-        }
+        } else {
+            $notificationtype = $status === 'error' ? 'error' : 'info';
+            $statusmessage = get_string('marketplacestatus_' . $status, 'mod_awakegame');
 
-        if (!empty($awakegame->marketplaceid)) {
-            $updateurl = new moodle_url('/mod/awakegame/marketplace_update.php');
-            $updatebutton = html_writer::start_tag('form', ['method' => 'post', 'action' => $updateurl->out(false), 'style' => 'margin-top:10px;']);
-            $updatebutton .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
-            $updatebutton .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'id', 'value' => $cm->id]);
-            $updatebutton .= html_writer::tag('button', get_string('updateinmarketplace', 'mod_awakegame'),
-                ['type' => 'submit', 'class' => 'btn btn-secondary']);
-            $updatebutton .= html_writer::end_tag('form');
-            echo $updatebutton;
+            if ($status === 'error') {
+                $nextretry = awakegame_get_marketplace_next_retry($awakegame->id);
+                if ($nextretry) {
+                    $statusmessage .= ' ' . get_string('marketplacenextretry', 'mod_awakegame', userdate($nextretry, get_string('strftimedatetime', 'langconfig')));
+                }
+            }
+
+            echo $OUTPUT->notification($statusmessage, $notificationtype);
+
+            if ($status === 'error' && !empty($awakegame->marketplacelasterror)
+                    && has_capability('moodle/site:config', context_system::instance())) {
+                echo $OUTPUT->box(
+                    get_string('marketplacelasterror_detail', 'mod_awakegame', s($awakegame->marketplacelasterror)),
+                    'generalbox',
+                    '',
+                    ['style' => 'font-size:0.85em; color:#666;']
+                );
+            }
+
+            if (!empty($awakegame->marketplaceid)) {
+                echo awakegame_marketplace_action_button(
+                    $cm->id,
+                    '/mod/awakegame/marketplace_update.php',
+                    get_string('updateinmarketplace', 'mod_awakegame')
+                );
+            }
         }
     }
 }

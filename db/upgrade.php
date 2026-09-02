@@ -143,5 +143,20 @@ function xmldb_awakegame_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026090100, 'awakegame');
     }
 
+    if ($oldversion < 2026090200) {
+        // La publicación en el Marketplace pasa a ser siempre una acción
+        // manual desde la página de la actividad (botón "Publicar en el
+        // Marketplace"), nunca automática al guardar el formulario — así el
+        // profesor ve primero cómo ha quedado el juego. La casilla y el campo
+        // que la respaldaba ya no se usan para nada.
+        $table = new xmldb_table('awakegame');
+        $field = new xmldb_field('marketplaceshare');
+        if ($dbman->field_exists($table, $field)) {
+            $dbman->drop_field($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026090200, 'awakegame');
+    }
+
     return true;
 }
