@@ -61,7 +61,7 @@ function awakegame_add_instance($data, $mform = null) {
 function awakegame_update_instance($data, $mform = null) {
     global $DB;
 
-    $old = $DB->get_record('awakegame', ['id' => $data->instance], 'aiprompt, contentsource, marketplaceid');
+    $old = $DB->get_record('awakegame', ['id' => $data->instance], 'aiprompt, contentsource');
 
     // El prompt original queda bloqueado en el formulario una vez existe (ver
     // mod_form.php). Un campo bloqueado ("hardFreeze") no siempre viaja de
@@ -247,15 +247,11 @@ function awakegame_process_content(context_module $context, $data, $old = null) 
         awakegame_extract_package($context, $data->id);
     }
 
-    // Compartir en el Marketplace: solo se publica automáticamente la PRIMERA
-    // vez que se marca la casilla (todavía no tiene marketplaceid). Si ya
-    // estaba publicado, guardar el formulario de nuevo NO lo actualiza — eso
-    // es siempre una acción manual del botón "Actualizar en el Marketplace"
-    // (ver view.php / marketplace_update.php), tal y como se pidió.
-    $oldmarketplaceid = trim((string) ($old->marketplaceid ?? ''));
-    if (!empty($data->marketplaceshare) && $oldmarketplaceid === '') {
-        awakegame_queue_marketplace_task($data->id, 'publish');
-    }
+    // Publicar en el Marketplace es siempre una acción manual y posterior:
+    // el profesor primero ve cómo ha quedado el juego, y solo entonces decide
+    // publicarlo con el botón "Publicar en el Marketplace" de view.php (ver
+    // marketplace_publish.php) — nunca automáticamente al guardar el
+    // formulario, para no compartir algo que todavía no se ha visto.
 }
 
 /**
@@ -1038,6 +1034,7 @@ function awakegame_use_marketplace_entry(context_module $context, $instanceid, $
     if (!$game) {
         return; // El juego ya no existe en el Marketplace, o no se pudo contactar; no se rompe el guardado.
     }
+    awakegame_marketplace_mark_used($marketplacegameid);
 
     awakegame_save_content($context, $game['html']);
     $DB->set_field('awakegame', 'revision', time(), ['id' => $instanceid]);
@@ -1070,6 +1067,7 @@ function awakegame_adapt_marketplace_entry(
     if (!$game) {
         return; // El juego ya no existe en el Marketplace, o no se pudo contactar; no se rompe el guardado.
     }
+    awakegame_marketplace_mark_used($marketplacegameid);
 
     $templatehtml = awakegame_strip_score_bridge($game['html']);
 
@@ -1189,11 +1187,20 @@ function awakegame_queue_marketplace_task($instanceid, string $mode): void {
 }
 
 /**
- * Listado ligero de juegos publicados, para el selector "Usar del
- * Marketplace" de mod_form.php. Si el Marketplace no responde (apagado, sin
- * configurar, caído en ese momento), se devuelve una lista vacía en vez de
- * romper el formulario — igual de tolerante que awakegame_find_section_pdf().
+ * HTML de un formulario de un solo botón (con su sesskey) para las acciones
+ * de Marketplace de view.php ("Publicar"/"Actualizar"), que solo cambian de
+ * URL y de texto entre sí.
  */
+function awakegame_marketplace_action_button(int $cmid, string $actionurl, string $label): string {
+    $url = new moodle_url($actionurl);
+    $html = html_writer::start_tag('form', ['method' => 'post', 'action' => $url->out(false), 'style' => 'margin-top:10px;']);
+    $html .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+    $html .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'id', 'value' => $cmid]);
+    $html .= html_writer::tag('button', $label, ['type' => 'submit', 'class' => 'btn btn-secondary']);
+    $html .= html_writer::end_tag('form');
+    return $html;
+}
+
 /**
  * Hora programada del próximo reintento automático de publicación/actualización
  * de esta actividad en el Marketplace, si hay una tarea ad-hoc pendiente para
@@ -1221,9 +1228,16 @@ function awakegame_get_marketplace_next_retry(int $instanceid): ?int {
     return null;
 }
 
-function awakegame_marketplace_list_games(): array {
+/**
+ * Listado ligero de juegos publicados, para el selector emergente "Buscar en
+ * el Marketplace" de mod_form.php (ver marketplace_picker.php). Si el
+ * Marketplace no responde (apagado, sin configurar, caído en ese momento),
+ * se devuelve una lista vacía en vez de romper la página — igual de
+ * tolerante que awakegame_find_section_pdf().
+ */
+function awakegame_marketplace_list_games(string $search = ''): array {
     try {
-        $result = awakegame_marketplace_request('GET');
+        $result = awakegame_marketplace_request('GET', $search !== '' ? ['q' => $search] : []);
         return $result['games'] ?? [];
     } catch (\Throwable $e) {
         return [];
@@ -1240,6 +1254,21 @@ function awakegame_marketplace_get_game($marketplacegameid): ?array {
         return $result['game'] ?? null;
     } catch (\Throwable $e) {
         return null;
+    }
+}
+
+/**
+ * Avisa al Marketplace de que este juego se acaba de usar (copiar tal cual o
+ * adaptar con IA) en una actividad. Solo alimenta el contador de "usado X
+ * veces" del catálogo — nunca debe poder romper el guardado de la actividad,
+ * así que cualquier fallo se ignora en silencio, igual que el resto de
+ * llamadas de solo-información al Marketplace.
+ */
+function awakegame_marketplace_mark_used($marketplacegameid): void {
+    try {
+        awakegame_marketplace_request('POST', ['id' => $marketplacegameid, 'action' => 'use']);
+    } catch (\Throwable $e) {
+        // Silencioso a propósito.
     }
 }
 

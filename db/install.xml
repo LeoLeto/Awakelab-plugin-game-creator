@@ -13,7 +13,6 @@
         <FIELD NAME="aiimprovement" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Mejora/cambio pendiente de aplicar sobre el juego actual; se vacia tras aplicarse"/>
         <FIELD NAME="grade" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="100" SEQUENCE="false" COMMENT="Puntos maximos (positivo) o -id de escala (negativo); 0 = sin calificar"/>
         <FIELD NAME="aipendingreview" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1 = generado/mejorado por IA y aun no confirmado por el profesor; los alumnos no pueden verlo"/>
-        <FIELD NAME="marketplaceshare" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1 = el profesor quiere compartir este juego en el Marketplace"/>
         <FIELD NAME="marketplaceid" TYPE="char" LENGTH="40" NOTNULL="false" SEQUENCE="false" COMMENT="Id devuelto por el Marketplace tras publicar; vacio si aun no se ha publicado"/>
         <FIELD NAME="marketplacestatus" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="" SEQUENCE="false" COMMENT="'', pending, published o error"/>
         <FIELD NAME="marketplacelasterror" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Mensaje tecnico del ultimo fallo al publicar/actualizar en el Marketplace; vacio si el ultimo intento fue correcto"/>
